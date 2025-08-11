@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>英単語ボード（Lv＋表示モード＋カテゴリー＋オート関連）</title>
+<style>
+  :root{
+    --bg:#f7f7f8; --card:#fff; --text:#111; --sub:#666;
+    --border:#e6e6e9; --accent:#0f172a; --danger:#a20000;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:var(--text);}
+  header{position:sticky; top:0; z-index:10; backdrop-filter:saturate(1.2) blur(6px); background:rgba(255,255,255,.85); border-bottom:1px solid var(--border);}
+  .container{max-width:980px; margin:0 auto; padding:12px 16px;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .title{font-weight:700}
+  .grow{flex:1 1 auto}
+
+  /* 入力系とボタンに影＋ホバー/アクティブの“押した感” */
+  input[type="text"], select, textarea{
+    width:100%; padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:#fff;
+    box-shadow:0 2px 4px rgba(0,0,0,.08);
+    transition:box-shadow .2s ease, transform .08s ease, background-color .08s ease;
+  }
+  input[type="text"]:hover, select:hover, textarea:hover{
+    box-shadow:0 3px 6px rgba(0,0,0,.12);
+  }
+  input[type="text"]:focus, select:focus, textarea:focus{
+    outline:none; box-shadow:0 0 0 3px rgba(15,23,42,.12), 0 3px 6px rgba(0,0,0,.14);
+  }
+
+  button, .btn{
+    border:1px solid var(--border);
+    background:#fff;
+    padding:9px 12px;
+    border-radius:12px;
+    cursor:pointer;
+    box-shadow:0 2px 4px rgba(0,0,0,.08);
+    transition:box-shadow .2s ease, transform .08s ease, background-color .08s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+  }
+  button:hover, .btn:hover{
+    box-shadow:0 3px 6px rgba(0,0,0,.12);
+  }
+  /* タップ時の押し込み（スマホでも効く） */
+  button:active, .btn:active{
+    transform: translateY(1px) scale(0.98);
+    box-shadow:0 1px 2px rgba(0,0,0,.06);
+    background:#f0f0f0;
+  }
+  /* モバイルでホバーなし環境の最適化（押した時の変化を強調） */
+  @media (hover: none){
+    button:active, .btn:active{
+      transform: translateY(1px) scale(0.985);
+    }
+  }
+
+  .btn-accent{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .btn-accent:hover{box-shadow:0 4px 8px rgba(15,23,42,.24)}
+  .btn-accent:active{background:#0c142d}
+
+  .btn-danger{border-color:#f1c5c5; color:var(--danger); background:#fff5f5}
+  .btn-danger:hover{box-shadow:0 3px 6px rgba(162,0,0,.18)}
+  .btn-danger:active{background:#ffeaea}
+
+  .pill{font-size:12px; padding:4px 8px; border-radius:999px; border:1px solid var(--border); color:var(--sub); background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  main{padding:16px}
+  .level-box{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+  .level-head{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); background:#fff;}
+  .list{max-height:70vh; overflow:auto; padding:8px 8px 12px}
+  .card{background:#fff; border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin:8px 2px; box-shadow:0 1px 0 rgba(0,0,0,.03);}
+  .term{font-weight:700}
+  .mean{color:var(--sub); font-size:13px}
+  .tag{display:inline-block; font-size:11px; padding:2px 6px; margin:4px 6px 0 0; border-radius:999px; border:1px solid var(--border); color:#444; background:#fafafa; box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .empty{color:#999; text-align:center; padding:20px}
+  dialog{border:none; border-radius:16px; width:min(600px, 92vw); padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25); background:#fff}
+  .modal-body{padding:16px}
+  .modal-foot{display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border); background:#fafafa; border-radius:0 0 16px 16px}
+  .field{margin:10px 0}
+  label{display:block; font-size:12px; color:#666; margin:6px 0}
+  .toolbar{display:flex; flex-wrap:wrap; gap:8px}
+  .muted{color:#777; font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="container row">
+    <div class="title">英単語ボード</div>
+    <div class="grow"></div>
+
+    <!-- レベル選択 -->
+    <select id="levelSelect" style="min-width:110px"></select>
+
+    <!-- カテゴリー絞り込み -->
+    <select id="catFilter" title="カテゴリー" style="min-width:160px"></select>
+    <button id="manageCatsBtn" title="カテゴリー管理">カテゴリ管理</button>
+
+    <!-- 表示モード -->
+    <select id="viewMode" title="表示モード" style="min-width:125px">
+      <option value="en">英語のみ</option>
+      <option value="ja">日本語のみ</option>
+      <option value="both">両方</option>
+    </select>
+
+    <input id="search" type="text" placeholder="検索（英語 / 日本語 / カテゴリー名）" />
+    <button id="addWordBtn" class="btn-accent">＋ 追加</button>
+    <button id="manageLevelsBtn">レベル管理</button>
+    <button id="exportBtn">書き出し</button>
+    <label class="btn">
+      読み込み<input id="importInput" type="file" accept="application/json" hidden />
+    </label>
+    <button id="resetBtn" class="btn-danger">全消去</button>
+  </div>
+</header>
+
+<main class="container">
+  <section class="level-box">
+    <div class="level-head">
+      <div id="levelTitle" class="title">Lv</div>
+      <div class="grow"></div>
+      <span id="countPill" class="pill"></span>
+    </div>
+    <div id="list" class="list"></div>
+  </section>
+  <div class="muted" style="margin-top:10px;">
+    単語をタップすると詳細（意味・例文・発音・編集・削除・レベル/カテゴリー変更・関連語）。
+  </div>
+</main>
+
+<!-- 追加/編集モーダル -->
+<dialog id="wordDlg">
+  <form method="dialog">
+    <div class="modal-body">
+      <h3 id="wordDlgTitle" style="margin:4px 0 8px 0">単語を追加</h3>
+      <div class="field">
+        <label>英単語 / 熟語</label>
+        <input id="fTerm" type="text" required />
+      </div>
+      <div class="field">
+        <label>日本語の意味</label>
+        <input id="fMeaning" type="text" required />
+      </div>
+      <div class="field">
+        <label>例文（任意）</label>
+        <textarea id="fExample" placeholder="例）I had an apple for breakfast."></textarea>
+      </div>
+      <div class="row">
+        <div class="field" style="flex:1 1 40%">
+          <label>レベル</label>
+          <select id="fLevel"></select>
+        </div>
+        <div class="field" style="flex:1 1 60%">
+          <label>カテゴリー（複数選択可）</label>
+          <select id="fCats" multiple size="6" title="Ctrl/⌘で複数選択"></select>
+        </div>
+      </div>
+      <div class="muted">同一レベル内で同じ英単語の重複を防止します。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-accent">保存</button>
+      <button type="button" id="wordDlgCancel">キャンセル</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 詳細モーダル -->
+<dialog id="detailDlg">
+  <div class="modal-body">
+    <div class="toolbar">
+      <span id="dTerm" class="title" style="font-size:20px"></span>
+      <button id="speakBtn" title="発音">🔊</button>
+      <span class="pill" id="dLevelPill"></span>
+    </div>
+    <div style="margin-top:6px">
+      <div><strong>意味：</strong><span id="dMeaning"></span></div>
+      <div id="dExampleWrap" style="margin-top:6px; display:none;"><strong>例文：</strong><div id="dExample" style="white-space:pre-wrap"></div></div>
+      <div style="margin-top:8px;"><strong>カテゴリー：</strong><span id="dCats"></span></div>
+      <div style="margin-top:8px;">
+        <strong>関連語（自動）：</strong>
+        <div id="dRelated" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+        <div class="muted" style="margin-top:4px">※ 語幹・前方一致に基づき自動生成（LIKE → ALIKE / LIKELY / LIKABLE など）</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <div class="field" style="flex:1 1 40%">
+        <label>レベル変更</label>
+        <select id="dLevelSel"></select>
+      </div>
+      <div class="field" style="flex:1 1 60%">
+        <label>カテゴリー変更（複数選択）</label>
+        <select id="dCatsSel" multiple size="6"></select>
+      </div>
+    </div>
+
+    <div class="toolbar" style="margin-top:8px">
+      <button id="editBtn">編集</button>
+      <button id="deleteBtn" class="btn-danger">削除</button>
+      <div class="grow"></div>
+      <button id="detailClose">閉じる</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- レベル管理モーダル -->
+<dialog id="levelsDlg">
+  <form method="dialog">
+    <div class="modal-body">
+      <h3 style="margin:4px 0 8px 0">レベル管理</h3>
+      <div id="levelsList"></div>
+      <div class="row" style="margin-top:10px">
+        <input id="newLevelName" type="text" placeholder="新しいレベル名（例：Lv5）" />
+        <button type="button" id="addLevelReal">＋ 追加</button>
+      </div>
+      <div class="muted" style="margin-top:8px">レベルを削除すると、そのレベルの単語は先頭レベルへ移動します。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-accent">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- カテゴリー管理モーダル -->
+<dialog id="catsDlg">
+  <form method="dialog">
+    <div class="modal-body">
+      <h3 style="margin:4px 0 8px 0">カテゴリー管理</h3>
+      <div id="catsList"></div>
+      <div class="row" style="margin-top:10px">
+        <input id="newCatName" type="text" placeholder="新しいカテゴリー名（例：イディオム）" />
+        <button type="button" id="addCatReal">＋ 追加</button>
+      </div>
+      <div class="muted" style="margin-top:8px">カテゴリーを削除すると、各単語から当該カテゴリーが外れます（未分類が自動付与）。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-accent">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/*** ストレージ ***/
+const LS_KEY = "vocab_board_v5_auto_related_shadow_touch";
+function loadState(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch{ return null; } }
+function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+/*** 状態 ***/
+let state = loadState() || {
+  levels: ["Lv1","Lv2","Lv3","Lv4"],
+  categories: ["未分類","名詞","動詞","形容詞","副詞","イディオム"],
+  words: [], // {id, term, meaning, example?, levelName, categories:[], relatedIds:[], createdAt}
+  ui: { selectedLevel: "Lv1", viewMode: "both", catFilter: "__all", autoRelate: true }
+};
+// 互換
+(state.words||[]).forEach(w=>{
+  if(!Array.isArray(w.categories)) w.categories=["未分類"];
+  if(!Array.isArray(w.relatedIds)) w.relatedIds=[];
+});
+if(!state.ui) state.ui = { selectedLevel: state.levels?.[0]||"Lv1", viewMode:"both", catFilter:"__all", autoRelate:true };
+
+const byId = (id)=> state.words.find(w=>w.id===id);
+
+/*** 参照 ***/
+const $levelSelect = document.getElementById("levelSelect");
+const $catFilter = document.getElementById("catFilter");
+const $viewMode = document.getElementById("viewMode");
+const $levelTitle = document.getElementById("levelTitle");
+const $countPill = document.getElementById("countPill");
+const $list = document.getElementById("list");
+
+const $search = document.getElementById("search");
+const $addWordBtn = document.getElementById("addWordBtn");
+const $manageLevelsBtn = document.getElementById("manageLevelsBtn");
+const $manageCatsBtn = document.getElementById("manageCatsBtn");
+const $exportBtn = document.getElementById("exportBtn");
+const $importInput = document.getElementById("importInput");
+const $resetBtn = document.getElementById("resetBtn");
+
+/*** 初期化（UI反映） ***/
+function initSelectors(){
+  // level select
+  $levelSelect.innerHTML = "";
+  state.levels.forEach(lv=>{
+    const opt = document.createElement("option");
+    opt.value = lv; opt.textContent = lv;
+    $levelSelect.appendChild(opt);
+  });
+  if(!state.levels.includes(state.ui.selectedLevel)) state.ui.selectedLevel = state.levels[0];
+  $levelSelect.value = state.ui.selectedLevel;
+
+  // category filter
+  $catFilter.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "__all"; allOpt.textContent = "カテゴリー: すべて";
+  $catFilter.appendChild(allOpt);
+  state.categories.forEach(cat=>{
+    const o = document.createElement("option");
+    o.value = cat; o.textContent = `カテゴリー: ${cat}`;
+    $catFilter.appendChild(o);
+  });
+  if(state.ui.catFilter!=="__all" && !state.categories.includes(state.ui.catFilter)){
+    state.ui.catFilter = "__all";
+  }
+  $catFilter.value = state.ui.catFilter;
+
+  // view mode
+  $viewMode.value = state.ui.viewMode || "both";
+}
+
+/*** 描画 ***/
+function render(){
+  initSelectors();
+  const lv = state.ui.selectedLevel;
+  const mode = state.ui.viewMode;
+  const cat = state.ui.catFilter;
+  const q = $search.value.trim().toLowerCase();
+
+  $levelTitle.textContent = lv + (cat!=="__all" ? `｜${cat}` : "");
+
+  let items = state.words
+    .filter(w=>w.levelName===lv)
+    .filter(w=> (cat==="__all") ? true : (w.categories||[]).includes(cat))
+    .filter(w=>{
+      if(!q) return true;
+      return w.term.toLowerCase().includes(q)
+          || (w.meaning||"").toLowerCase().includes(q)
+          || (w.categories||[]).some(c=>c.toLowerCase().includes(q));
+    })
+    .sort((a,b)=> b.createdAt - a.createdAt);
+
+  $countPill.textContent = `${items.length}語`;
+
+  $list.innerHTML = "";
+  if(items.length===0){
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "単語がありません";
+    $list.appendChild(empty);
+  }else{
+    for(const w of items){
+      const card = document.createElement("div");
+      card.className = "card";
+      let inner = "";
+      if(mode==="en"){
+        inner = `<div class="term">${escapeHtml(w.term)}</div>`;
+      }else if(mode==="ja"){
+        inner = `<div class="term">${escapeHtml(w.meaning)}</div>`;
+      }else{
+        inner = `<div class="term">${escapeHtml(w.term)}</div><div class="mean">${escapeHtml(w.meaning)}</div>`;
+      }
+      const tags = (w.categories||[]).map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join("");
+      card.innerHTML = inner + (tags? `<div>${tags}</div>`:"");
+      card.addEventListener("click", ()=> openDetail(w.id));
+      $list.appendChild(card);
+    }
+  }
+
+  saveState();
+}
+
+function escapeHtml(s){ return (s??"").toString().replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m])) }
+
+/*** 追加/編集モーダル ***/
+const wordDlg = document.getElementById("wordDlg");
+const wordDlgTitle = document.getElementById("wordDlgTitle");
+const fTerm = document.getElementById("fTerm");
+const fMeaning = document.getElementById("fMeaning");
+const fExample = document.getElementById("fExample");
+const fLevel = document.getElementById("fLevel");
+const fCats = document.getElementById("fCats");
+const wordDlgCancel = document.getElementById("wordDlgCancel");
+let editingId = null;
+
+function populateLevelOptions(sel){
+  sel.innerHTML = "";
+  state.levels.forEach(lv=>{
+    const opt = document.createElement("option");
+    opt.value = lv; opt.textContent = lv;
+    sel.appendChild(opt);
+  });
+}
+function populateCategoryOptions(sel, selected=[]){
+  sel.innerHTML = "";
+  state.categories.forEach(cat=>{
+    const opt = document.createElement("option");
+    opt.value = cat; opt.textContent = cat;
+    if(selected.includes(cat)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function openAdd(){
+  wordDlgTitle.textContent = "単語を追加";
+  populateLevelOptions(fLevel);
+  populateCategoryOptions(fCats, ["未分類"]);
+  fTerm.value = ""; fMeaning.value = ""; fExample.value = "";
+  fLevel.value = state.ui.selectedLevel || state.levels[0] || "Lv1";
+  editingId = null;
+  wordDlg.showModal(); setTimeout(()=>fTerm.focus(),50);
+}
+function openEdit(id){
+  const w = byId(id); if(!w) return;
+  wordDlgTitle.textContent = "単語を編集";
+  populateLevelOptions(fLevel);
+  populateCategoryOptions(fCats, w.categories||[]);
+  fTerm.value = w.term; fMeaning.value = w.meaning || ""; fExample.value = w.example || "";
+  fLevel.value = w.levelName;
+  editingId = id;
+  wordDlg.showModal();
+}
+
+function existsDuplicate(term, levelName, exceptId){
+  const t = term.trim().toLowerCase();
+  return state.words.some(w => w.levelName===levelName && w.term.trim().toLowerCase()===t && w.id!==exceptId);
+}
+
+wordDlg.addEventListener("close", ()=>{
+  if(wordDlg.returnValue==="cancel") return;
+  const term = fTerm.value.trim();
+  const meaning = fMeaning.value.trim();
+  if(!term || !meaning) return;
+  const example = fExample.value.trim();
+  const levelName = fLevel.value;
+  const cats = Array.from(fCats.selectedOptions).map(o=>o.value);
+  const categories = cats.length? cats : ["未分類"];
+
+  if(existsDuplicate(term, levelName, editingId)){
+    alert(`このレベル（${levelName}）にはすでに「${term}」が存在します。`);
+    return;
+  }
+
+  if(editingId){
+    Object.assign(byId(editingId), {term, meaning, example: example || undefined, levelName, categories});
+  }else{
+    state.words.unshift({ id: crypto.randomUUID(), term, meaning, example: example || undefined, levelName, categories, relatedIds:[], createdAt: Date.now() });
+  }
+  autoRelateAll();
+  render();
+});
+wordDlgCancel.addEventListener("click", ()=>{ wordDlg.returnValue="cancel"; wordDlg.close(); });
+
+/*** 詳細モーダル ***/
+const detailDlg = document.getElementById("detailDlg");
+const dTerm = document.getElementById("dTerm");
+const dMeaning = document.getElementById("dMeaning");
+const dExampleWrap = document.getElementById("dExampleWrap");
+const dExample = document.getElementById("dExample");
+const dLevelPill = document.getElementById("dLevelPill");
+const dLevelSel = document.getElementById("dLevelSel");
+const dCats = document.getElementById("dCats");
+const dCatsSel = document.getElementById("dCatsSel");
+const deleteBtn = document.getElementById("deleteBtn");
+const editBtn = document.getElementById("editBtn");
+const detailClose = document.getElementById("detailClose");
+const speakBtn = document.getElementById("speakBtn");
+const dRelated = document.getElementById("dRelated");
+let currentDetailId = null;
+
+function openDetail(id){
+  const w = byId(id); if(!w) return;
+  currentDetailId = id;
+  dTerm.textContent = w.term;
+  dMeaning.textContent = w.meaning || "";
+  if(w.example){ dExampleWrap.style.display="block"; dExample.textContent = w.example; } else { dExampleWrap.style.display="none"; }
+  dLevelPill.textContent = w.levelName;
+  populateLevelOptions(dLevelSel); dLevelSel.value = w.levelName;
+  dCats.innerHTML = (w.categories||[]).map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join("");
+  populateCategoryOptions(dCatsSel, w.categories||[]);
+  renderRelatedChips(w);
+  detailDlg.showModal();
+}
+function renderRelatedChips(w){
+  dRelated.innerHTML = "";
+  const ids = w.relatedIds||[];
+  if(ids.length===0){
+    const span = document.createElement("span");
+    span.className = "muted";
+    span.textContent = "（なし）";
+    dRelated.appendChild(span);
+    return;
+  }
+  ids.forEach(id=>{
+    const rw = byId(id); if(!rw) return;
+    const btn = document.createElement("button");
+    btn.className = "pill";
+    btn.type = "button";
+    btn.textContent = rw.term;
+    btn.title = rw.meaning || "";
+    btn.addEventListener("click", ()=> openDetail(rw.id));
+    dRelated.appendChild(btn);
+  });
+}
+dLevelSel.addEventListener("change", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  w.levelName = dLevelSel.value;
+  dLevelPill.textContent = w.levelName;
+  state.ui.selectedLevel = w.levelName;
+  autoRelateAll();
+  render();
+});
+dCatsSel.addEventListener("change", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  const cats = Array.from(dCatsSel.selectedOptions).map(o=>o.value);
+  w.categories = cats.length? cats : ["未分類"];
+  dCats.innerHTML = w.categories.map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join("");
+  saveState();
+});
+deleteBtn.addEventListener("click", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  if(confirm(`「${w.term}」を削除しますか？`)){
+    state.words = state.words.filter(x=>x.id!==w.id);
+    autoRelateAll();
+    detailDlg.close(); render();
+  }
+});
+editBtn.addEventListener("click", ()=>{
+  const id = currentDetailId; detailDlg.close(); setTimeout(()=>openEdit(id),50);
+});
+detailClose.addEventListener("click", ()=> detailDlg.close());
+speakBtn.addEventListener("click", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  speak(w.term);
+});
+
+/*** レベル管理 ***/
+const levelsDlg = document.getElementById("levelsDlg");
+const levelsList = document.getElementById("levelsList");
+const newLevelName = document.getElementById("newLevelName");
+const addLevelReal = document.getElementById("addLevelReal");
+
+function openLevels(){ renderLevelsList(); levelsDlg.showModal(); }
+function renderLevelsList(){
+  levelsList.innerHTML = "";
+  state.levels.forEach((lv, idx)=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.margin = "8px 0";
+    row.innerHTML = `
+      <input type="text" value="${escapeHtml(lv)}" data-idx="${idx}" style="flex:1 1 auto" />
+      <button data-up="${idx}">↑</button>
+      <button data-down="${idx}">↓</button>
+      <button class="btn-danger" data-del="${idx}">削除</button>
+    `;
+    levelsList.appendChild(row);
+  });
+
+  levelsList.querySelectorAll("input[type=text]").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      const i = +inp.dataset.idx;
+      const old = state.levels[i];
+      const name = inp.value.trim() || old;
+      state.words.forEach(w=>{ if(w.levelName===old) w.levelName = name; });
+      state.levels[i] = name;
+      if(state.ui.selectedLevel===old) state.ui.selectedLevel = name;
+      autoRelateAll();
+      render(); renderLevelsList();
+    });
+  });
+  levelsList.querySelectorAll("[data-up]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.up; if(i<=0) return;
+      [state.levels[i-1], state.levels[i]] = [state.levels[i], state.levels[i-1]];
+      render(); renderLevelsList();
+    };
+  });
+  levelsList.querySelectorAll("[data-down]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.down; if(i>=state.levels.length-1) return;
+      [state.levels[i+1], state.levels[i]] = [state.levels[i], state.levels[i+1]];
+      render(); renderLevelsList();
+    };
+  });
+  levelsList.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.del;
+      if(state.levels.length<=1){ alert("レベルは最低1つ必要です"); return; }
+      const delName = state.levels[i];
+      if(!confirm(`レベル「${delName}」を削除しますか？そのレベルの単語は先頭レベルへ移動します。`)) return;
+      const fallback = state.levels[0 === i ? 1 : 0];
+      state.words.forEach(w=>{ if(w.levelName===delName) w.levelName = fallback; });
+      if(state.ui.selectedLevel===delName) state.ui.selectedLevel = fallback;
+      state.levels.splice(i,1);
+      autoRelateAll();
+      render(); renderLevelsList();
+    };
+  });
+}
+addLevelReal.addEventListener("click", ()=>{
+  const name = newLevelName.value.trim();
+  if(!name) return;
+  if(state.levels.includes(name)){ alert("同名レベルが存在します"); return; }
+  state.levels.push(name);
+  newLevelName.value="";
+  render(); renderLevelsList();
+});
+
+/*** カテゴリー管理 ***/
+const catsDlg = document.getElementById("catsDlg");
+const catsList = document.getElementById("catsList");
+const newCatName = document.getElementById("newCatName");
+const addCatReal = document.getElementById("addCatReal");
+
+function openCats(){ renderCatsList(); catsDlg.showModal(); }
+function renderCatsList(){
+  catsList.innerHTML = "";
+  state.categories.forEach((cat, idx)=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.margin = "8px 0";
+    row.innerHTML = `
+      <input type="text" value="${escapeHtml(cat)}" data-idx="${idx}" style="flex:1 1 auto" />
+      <button data-up="${idx}">↑</button>
+      <button data-down="${idx}">↓</button>
+      <button class="btn-danger" data-del="${idx}">削除</button>
+    `;
+    catsList.appendChild(row);
+  });
+
+  // 変更
+  catsList.querySelectorAll("input[type=text]").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      const i = +inp.dataset.idx;
+      const old = state.categories[i];
+      const name = inp.value.trim() || old;
+      state.words.forEach(w=>{
+        if(Array.isArray(w.categories)){
+          w.categories = w.categories.map(c=> c===old ? name : c);
+        }
+      });
+      state.categories[i] = name;
+      if(state.ui.catFilter===old) state.ui.catFilter = name;
+      saveState();
+      renderCatsList(); render();
+    });
+  });
+  // 並べ替え
+  catsList.querySelectorAll("[data-up]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.up; if(i<=0) return;
+      [state.categories[i-1], state.categories[i]] = [state.categories[i], state.categories[i-1]];
+      saveState(); renderCatsList(); render();
+    };
+  });
+  catsList.querySelectorAll("[data-down]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.down; if(i>=state.categories.length-1) return;
+      [state.categories[i+1], state.categories[i]] = [state.categories[i], state.categories[i+1]];
+      saveState(); renderCatsList(); render();
+    };
+  });
+  // 削除
+  catsList.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.del;
+      if(state.categories.length<=1){ alert("カテゴリーは最低1つ必要です"); return; }
+      const delName = state.categories[i];
+      if(!confirm(`カテゴリー「${delName}」を削除しますか？このカテゴリーは各単語から外れます。`)) return;
+      state.words.forEach(w=>{
+        if(Array.isArray(w.categories)){
+          w.categories = w.categories.filter(c=>c!==delName);
+          if(w.categories.length===0) w.categories=["未分類"];
+        }
+      });
+      if(state.ui.catFilter===delName) state.ui.catFilter="__all";
+      state.categories.splice(i,1);
+      saveState(); renderCatsList(); render();
+    };
+  });
+}
+addCatReal.addEventListener("click", ()=>{
+  const name = newCatName.value.trim();
+  if(!name) return;
+  if(state.categories.includes(name)){ alert("同名カテゴリーが存在します"); return; }
+  state.categories.push(name);
+  newCatName.value="";
+  saveState(); renderCatsList(); render();
+});
+
+/*** 音声 ***/
+function speak(text){
+  try{
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    const en = voices.find(v=>/en-|English/i.test(v.lang||v.name||""));
+    if(en) u.voice = en;
+    u.lang = "en-US";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }catch{ alert("音声再生に対応していない可能性があります。"); }
+}
+
+/*** I/O ***/
+$exportBtn.addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "vocab-board.json";
+  a.click(); URL.revokeObjectURL(a.href);
+});
+$importInput.addEventListener("change", async (e)=>{
+  const file = e.target.files?.[0]; if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!Array.isArray(data.levels) || !Array.isArray(data.words)) throw new Error();
+    if(!Array.isArray(data.categories)) data.categories = ["未分類","名詞","動詞","形容詞","副詞","イディオム"];
+    data.words.forEach(w=>{
+      if(!Array.isArray(w.categories)) w.categories=["未分類"];
+      if(!Array.isArray(w.relatedIds)) w.relatedIds=[];
+    });
+    state = Object.assign({ui:{selectedLevel:"Lv1", viewMode:"both", catFilter:"__all", autoRelate:true}}, data);
+    autoRelateAll();
+    render();
+    alert("読み込みました");
+  }catch{ alert("JSONの形式が正しくありません"); }
+  e.target.value="";
+});
+$resetBtn.addEventListener("click", ()=>{
+  if(confirm("全データを削除しますか？")){
+    state = {
+      levels:["Lv1","Lv2","Lv3","Lv4"],
+      categories:["未分類","名詞","動詞","形容詞","副詞","イディオム"],
+      words:[],
+      ui:{selectedLevel:"Lv1", viewMode:"both", catFilter:"__all", autoRelate:true}
+    };
+    render();
+  }
+});
+
+/*** イベント ***/
+$addWordBtn.addEventListener("click", openAdd);
+$manageLevelsBtn.addEventListener("click", openLevels);
+$manageCatsBtn.addEventListener("click", openCats);
+$search.addEventListener("input", render);
+$levelSelect.addEventListener("change", ()=>{ state.ui.selectedLevel = $levelSelect.value; render(); });
+$catFilter.addEventListener("change", ()=>{ state.ui.catFilter = $catFilter.value; render(); });
+$viewMode.addEventListener("change", ()=>{ state.ui.viewMode = $viewMode.value; render(); });
+
+/*** オート関連（完全自動） ***/
+function norm(s){ return (s||"").toLowerCase().replace(/[^a-z]/g,""); }
+function stemLitePlus(s){
+  s = norm(s);
+  if (s.length <= 3) return s;
+  const rules = [
+    /ability$|ibility$/,'',
+    /ization$|isation$/,'',
+    /fulness$/,'',
+    /ousness$/,'',
+    /ment$|ness$|less$|ship$|hood$|tion$|sion$|ance$|ence$|ery$|ary$/,'',
+    /ingly$|edly$|ively$|ically$|ially$|ally$|ably$|ibly$|ily$/,'',
+    /ational$|tional$|alize$|icate$|iciti$|ical$|ness$|ful$/,'',
+    /ed$|ing$|ers$|ies$|es$|s$/,'',
+    /able$|ible$|al$|ly$|er$|est$/,''
+  ];
+  for (let i=0; i<rules.length; i+=2){
+    const r = rules[i], rep = rules[i+1];
+    if (r.test(s)) { s = s.replace(r, rep); }
+  }
+  return s || s;
+}
+function familyKey(term){
+  const st = stemLitePlus(term);
+  if (st.length >= 3) return st;
+  return norm(term);
+}
+function commonPrefix(a,b){
+  a = String(a||""); b = String(b||"");
+  let i=0; const L = Math.min(a.length, b.length);
+  while(i<L && a[i]===b[i]) i++;
+  return a.slice(0,i);
+}
+function autoRelateAll(){
+  if (!state.ui.autoRelate) return;
+  const bucket = new Map(); // key -> ids[]
+  for (const w of state.words){
+    const key = familyKey(w.term);
+    if(!bucket.has(key)) bucket.set(key, []);
+    bucket.get(key).push(w.id);
+  }
+  // 近縁キーをマージ（共通prefix>=4）
+  const arr = Array.from(bucket.entries());
+  for(let i=0;i<arr.length;i++){
+    for(let j=i+1;j<arr.length;j++){
+      const [k1] = arr[i], [k2] = arr[j];
+      if(!bucket.has(k1) || !bucket.has(k2)) continue;
+      const pre = commonPrefix(k1,k2);
+      if(pre.length >= 4){
+        const moved = bucket.get(k2);
+        bucket.get(k1).push(...moved);
+        bucket.delete(k2);
+      }
+    }
+  }
+  const nextRelated = new Map(); // id -> Set<id>
+  for(const [, ids] of bucket){
+    const uniq = Array.from(new Set(ids));
+    for(const id of uniq){
+      if(!nextRelated.has(id)) nextRelated.set(id, new Set());
+      for(const other of uniq){ if(other!==id) nextRelated.get(id).add(other); }
+    }
+  }
+  const CAP = 12;
+  const choose = id => {
+    const s = nextRelated.get(id) || new Set();
+    const sorted = Array.from(s).sort((a,b)=> (byId(b)?.createdAt||0) - (byId(a)?.createdAt||0)).slice(0, CAP);
+    return sorted;
+  };
+  state.words.forEach(w=> w.relatedIds=[]);
+  state.words.forEach(w=> { w.relatedIds = choose(w.id); });
+  // 双方向担保
+  for(const w of state.words){
+    for(const rid of w.relatedIds){
+      const ow = byId(rid); if(!ow) continue;
+      if(!Array.isArray(ow.relatedIds)) ow.relatedIds=[];
+      if(!ow.relatedIds.includes(w.id)) ow.relatedIds.push(w.id);
+    }
+  }
+  saveState();
+}
+
+/*** 初期描画 & 初回関連生成 ***/
+render();
+autoRelateAll();
+render();
+
+// Safari対策：音声voicesが遅延ロードすることがある
+if (window.speechSynthesis){ window.speechSynthesis.onvoiceschanged = ()=>{}; }
+</script>
+</body>
+</html>
