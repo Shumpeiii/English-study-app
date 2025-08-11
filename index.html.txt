@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>英単語ボード（Lv切替＋表示モード）</title>
+<style>
+  :root{
+    --bg:#f7f7f8; --card:#fff; --text:#111; --sub:#666;
+    --border:#e6e6e9; --accent:#0f172a; --danger:#a20000;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:var(--text);}
+  header{position:sticky; top:0; z-index:10; backdrop-filter:saturate(1.2) blur(6px); background:rgba(255,255,255,.85); border-bottom:1px solid var(--border);}
+  .container{max-width:980px; margin:0 auto; padding:12px 16px;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .title{font-weight:700}
+  .grow{flex:1 1 auto}
+  input[type="text"], select{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;}
+  button, .btn{border:1px solid var(--border); background:#fff; padding:9px 12px; border-radius:12px; cursor:pointer;}
+  .btn-accent{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .btn-danger{border-color:#f1c5c5; color:var(--danger); background:#fff5f5}
+  .pill{font-size:12px; padding:4px 8px; border-radius:999px; border:1px solid var(--border); color:var(--sub); background:#fff}
+  main{padding:16px}
+  .level-box{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+  .level-head{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); background:#fff;}
+  .list{max-height:70vh; overflow:auto; padding:8px 8px 12px}
+  .card{background:#fff; border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin:8px 2px; box-shadow:0 1px 0 rgba(0,0,0,.03);}
+  .term{font-weight:700}
+  .mean{color:var(--sub); font-size:13px}
+  .empty{color:#999; text-align:center; padding:20px}
+  dialog{border:none; border-radius:16px; width:min(560px, 92vw); padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .modal-body{padding:16px}
+  .modal-foot{display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border); background:#fafafa; border-radius:0 0 16px 16px}
+  .field{margin:10px 0}
+  label{display:block; font-size:12px; color:#666; margin:6px 0}
+  textarea{width:100%; min-height:86px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; resize:vertical; background:#fff}
+  .toolbar{display:flex; flex-wrap:wrap; gap:8px}
+  .muted{color:#777; font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="container row">
+    <div class="title">英単語ボード</div>
+    <div class="grow"></div>
+
+    <!-- レベル選択 -->
+    <select id="levelSelect" style="min-width:110px"></select>
+
+    <!-- 表示モード -->
+    <select id="viewMode" title="表示モード" style="min-width:125px">
+      <option value="en">英語のみ</option>
+      <option value="ja">日本語のみ</option>
+      <option value="both">両方</option>
+    </select>
+
+    <input id="search" type="text" placeholder="検索（英語 / 日本語）" />
+    <button id="addWordBtn" class="btn-accent">＋ 追加</button>
+    <button id="manageLevelsBtn">レベル管理</button>
+    <button id="exportBtn">書き出し</button>
+    <label class="btn">
+      読み込み<input id="importInput" type="file" accept="application/json" hidden />
+    </label>
+    <button id="resetBtn" class="btn-danger">全消去</button>
+  </div>
+</header>
+
+<main class="container">
+  <section class="level-box">
+    <div class="level-head">
+      <div id="levelTitle" class="title">Lv</div>
+      <div class="grow"></div>
+      <span id="countPill" class="pill"></span>
+    </div>
+    <div id="list" class="list"></div>
+  </section>
+  <div class="muted" style="margin-top:10px;">単語をタップすると詳細（意味・例文・読み上げ・編集・削除・レベル変更）。</div>
+</main>
+
+<!-- 追加/編集モーダル -->
+<dialog id="wordDlg">
+  <form method="dialog">
+    <div class="modal-body">
+      <h3 id="wordDlgTitle" style="margin:4px 0 8px 0">単語を追加</h3>
+      <div class="field">
+        <label>英単語</label>
+        <input id="fTerm" type="text" required />
+      </div>
+      <div class="field">
+        <label>日本語の意味</label>
+        <input id="fMeaning" type="text" required />
+      </div>
+      <div class="field">
+        <label>例文（任意）</label>
+        <textarea id="fExample" placeholder="例）I had an apple for breakfast."></textarea>
+      </div>
+      <div class="field">
+        <label>レベル</label>
+        <select id="fLevel"></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-accent">保存</button>
+      <button type="button" id="wordDlgCancel">キャンセル</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 詳細モーダル -->
+<dialog id="detailDlg">
+  <div class="modal-body">
+    <div class="toolbar">
+      <span id="dTerm" class="title" style="font-size:20px"></span>
+      <button id="speakBtn" title="発音">🔊</button>
+      <span class="pill" id="dLevelPill"></span>
+    </div>
+    <div style="margin-top:6px">
+      <div><strong>意味：</strong><span id="dMeaning"></span></div>
+      <div id="dExampleWrap" style="margin-top:6px; display:none;"><strong>例文：</strong><div id="dExample" style="white-space:pre-wrap"></div></div>
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label>レベル変更</label>
+      <select id="dLevelSel"></select>
+    </div>
+
+    <div class="toolbar" style="margin-top:8px">
+      <button id="editBtn">編集</button>
+      <button id="deleteBtn" class="btn-danger">削除</button>
+      <div class="grow"></div>
+      <button id="detailClose">閉じる</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- レベル管理モーダル -->
+<dialog id="levelsDlg">
+  <form method="dialog">
+    <div class="modal-body">
+      <h3 style="margin:4px 0 8px 0">レベル管理</h3>
+      <div id="levelsList"></div>
+      <div class="row" style="margin-top:10px">
+        <input id="newLevelName" type="text" placeholder="新しいレベル名（例：Lv5）" />
+        <button type="button" id="addLevelReal">＋ 追加</button>
+      </div>
+      <div class="muted" style="margin-top:8px">レベルを削除すると、そのレベルの単語は先頭レベルへ移動します。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-accent">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/*** ストレージ ***/
+const LS_KEY = "vocab_board_v2";
+function loadState(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch{ return null; } }
+function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+/*** 状態 ***/
+let state = loadState() || {
+  levels: ["Lv1","Lv2","Lv3","Lv4"],
+  words: [], // {id, term, meaning, example?, levelName, createdAt}
+  ui: { selectedLevel: "Lv1", viewMode: "both" } // 追加
+};
+
+const byId = (id)=> state.words.find(w=>w.id===id);
+
+/*** 参照 ***/
+const $levelSelect = document.getElementById("levelSelect");
+const $viewMode = document.getElementById("viewMode");
+const $levelTitle = document.getElementById("levelTitle");
+const $countPill = document.getElementById("countPill");
+const $list = document.getElementById("list");
+
+const $search = document.getElementById("search");
+const $addWordBtn = document.getElementById("addWordBtn");
+const $manageLevelsBtn = document.getElementById("manageLevelsBtn");
+const $exportBtn = document.getElementById("exportBtn");
+const $importInput = document.getElementById("importInput");
+const $resetBtn = document.getElementById("resetBtn");
+
+/*** 初期化（UI反映） ***/
+function initSelectors(){
+  // level select
+  $levelSelect.innerHTML = "";
+  state.levels.forEach(lv=>{
+    const opt = document.createElement("option");
+    opt.value = lv; opt.textContent = lv;
+    $levelSelect.appendChild(opt);
+  });
+  if(!state.levels.includes(state.ui.selectedLevel)) state.ui.selectedLevel = state.levels[0];
+  $levelSelect.value = state.ui.selectedLevel;
+
+  // view mode
+  $viewMode.value = state.ui.viewMode || "both";
+}
+
+/*** 描画 ***/
+function render(){
+  initSelectors();
+  const lv = state.ui.selectedLevel;
+  const mode = state.ui.viewMode;
+  const q = $search.value.trim().toLowerCase();
+
+  // タイトル & 件数
+  $levelTitle.textContent = lv;
+  const items = state.words
+    .filter(w=>w.levelName===lv)
+    .filter(w=>{
+      if(!q) return true;
+      return w.term.toLowerCase().includes(q) || (w.meaning||"").toLowerCase().includes(q);
+    })
+    .sort((a,b)=> b.createdAt - a.createdAt);
+
+  $countPill.textContent = `${items.length}語`;
+
+  // リスト
+  $list.innerHTML = "";
+  if(items.length===0){
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "単語がありません";
+    $list.appendChild(empty);
+  }else{
+    for(const w of items){
+      const card = document.createElement("div");
+      card.className = "card";
+
+      // 表示モードごとの本文
+      let inner = "";
+      if(mode==="en"){
+        inner = `<div class="term">${escapeHtml(w.term)}</div>`;
+      }else if(mode==="ja"){
+        inner = `<div class="term">${escapeHtml(w.meaning)}</div>`;
+      }else{
+        inner = `<div class="term">${escapeHtml(w.term)}</div><div class="mean">${escapeHtml(w.meaning)}</div>`;
+      }
+      card.innerHTML = inner;
+
+      card.addEventListener("click", ()=> openDetail(w.id));
+      $list.appendChild(card);
+    }
+  }
+
+  saveState();
+}
+
+function escapeHtml(s){ return (s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m])) }
+
+/*** 追加/編集モーダル ***/
+const wordDlg = document.getElementById("wordDlg");
+const wordDlgTitle = document.getElementById("wordDlgTitle");
+const fTerm = document.getElementById("fTerm");
+const fMeaning = document.getElementById("fMeaning");
+const fExample = document.getElementById("fExample");
+const fLevel = document.getElementById("fLevel");
+const wordDlgCancel = document.getElementById("wordDlgCancel");
+let editingId = null;
+
+function populateLevelOptions(sel){
+  sel.innerHTML = "";
+  state.levels.forEach(lv=>{
+    const opt = document.createElement("option");
+    opt.value = lv; opt.textContent = lv;
+    sel.appendChild(opt);
+  });
+}
+
+function openAdd(){
+  wordDlgTitle.textContent = "単語を追加";
+  populateLevelOptions(fLevel);
+  fTerm.value = ""; fMeaning.value = ""; fExample.value = "";
+  fLevel.value = state.ui.selectedLevel || state.levels[0] || "Lv1";
+  editingId = null;
+  wordDlg.showModal(); setTimeout(()=>fTerm.focus(),50);
+}
+function openEdit(id){
+  const w = byId(id); if(!w) return;
+  wordDlgTitle.textContent = "単語を編集";
+  populateLevelOptions(fLevel);
+  fTerm.value = w.term; fMeaning.value = w.meaning || ""; fExample.value = w.example || "";
+  fLevel.value = w.levelName;
+  editingId = id;
+  wordDlg.showModal();
+}
+
+wordDlg.addEventListener("close", ()=>{
+  if(wordDlg.returnValue==="cancel") return;
+  const term = fTerm.value.trim();
+  const meaning = fMeaning.value.trim();
+  if(!term || !meaning) return;
+  const example = fExample.value.trim();
+  const levelName = fLevel.value;
+
+  if(editingId){
+    Object.assign(byId(editingId), {term, meaning, example: example || undefined, levelName});
+  }else{
+    state.words.unshift({ id: crypto.randomUUID(), term, meaning, example: example || undefined, levelName, createdAt: Date.now() });
+  }
+  render();
+});
+wordDlgCancel.addEventListener("click", ()=>{ wordDlg.returnValue="cancel"; wordDlg.close(); });
+
+/*** 詳細モーダル ***/
+const detailDlg = document.getElementById("detailDlg");
+const dTerm = document.getElementById("dTerm");
+const dMeaning = document.getElementById("dMeaning");
+const dExampleWrap = document.getElementById("dExampleWrap");
+const dExample = document.getElementById("dExample");
+const dLevelPill = document.getElementById("dLevelPill");
+const dLevelSel = document.getElementById("dLevelSel");
+const deleteBtn = document.getElementById("deleteBtn");
+const editBtn = document.getElementById("editBtn");
+const detailClose = document.getElementById("detailClose");
+const speakBtn = document.getElementById("speakBtn");
+let currentDetailId = null;
+
+function openDetail(id){
+  const w = byId(id); if(!w) return;
+  currentDetailId = id;
+  dTerm.textContent = w.term;
+  dMeaning.textContent = w.meaning || "";
+  if(w.example){ dExampleWrap.style.display="block"; dExample.textContent = w.example; } else { dExampleWrap.style.display="none"; }
+  dLevelPill.textContent = w.levelName;
+  populateLevelOptions(dLevelSel); dLevelSel.value = w.levelName;
+  detailDlg.showModal();
+}
+dLevelSel.addEventListener("change", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  w.levelName = dLevelSel.value;
+  dLevelPill.textContent = w.levelName;
+  state.ui.selectedLevel = w.levelName; // 選択中のレベルも合わせると分かりやすい
+  render();
+});
+deleteBtn.addEventListener("click", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  if(confirm(`「${w.term}」を削除しますか？`)){
+    state.words = state.words.filter(x=>x.id!==w.id);
+    detailDlg.close(); render();
+  }
+});
+editBtn.addEventListener("click", ()=>{
+  const id = currentDetailId; detailDlg.close(); setTimeout(()=>openEdit(id),50);
+});
+detailClose.addEventListener("click", ()=> detailDlg.close());
+speakBtn.addEventListener("click", ()=>{
+  const w = byId(currentDetailId); if(!w) return;
+  speak(w.term);
+});
+
+/*** レベル管理 ***/
+const levelsDlg = document.getElementById("levelsDlg");
+const levelsList = document.getElementById("levelsList");
+const newLevelName = document.getElementById("newLevelName");
+const addLevelReal = document.getElementById("addLevelReal");
+
+function openLevels(){ renderLevelsList(); levelsDlg.showModal(); }
+function renderLevelsList(){
+  levelsList.innerHTML = "";
+  state.levels.forEach((lv, idx)=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.margin = "8px 0";
+    row.innerHTML = `
+      <input type="text" value="${escapeHtml(lv)}" data-idx="${idx}" style="flex:1 1 auto" />
+      <button data-up="${idx}">↑</button>
+      <button data-down="${idx}">↓</button>
+      <button class="btn-danger" data-del="${idx}">削除</button>
+    `;
+    levelsList.appendChild(row);
+  });
+
+  // 名前変更
+  levelsList.querySelectorAll("input[type=text]").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      const i = +inp.dataset.idx;
+      const old = state.levels[i];
+      const name = inp.value.trim() || old;
+      state.words.forEach(w=>{ if(w.levelName===old) w.levelName = name; });
+      state.levels[i] = name;
+      if(state.ui.selectedLevel===old) state.ui.selectedLevel = name;
+      render(); renderLevelsList();
+    });
+  });
+  // 並べ替え
+  levelsList.querySelectorAll("[data-up]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.up; if(i<=0) return;
+      [state.levels[i-1], state.levels[i]] = [state.levels[i], state.levels[i-1]];
+      render(); renderLevelsList();
+    };
+  });
+  levelsList.querySelectorAll("[data-down]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.down; if(i>=state.levels.length-1) return;
+      [state.levels[i+1], state.levels[i]] = [state.levels[i], state.levels[i+1]];
+      render(); renderLevelsList();
+    };
+  });
+  // 削除
+  levelsList.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = +btn.dataset.del;
+      if(state.levels.length<=1){ alert("レベルは最低1つ必要です"); return; }
+      const delName = state.levels[i];
+      if(!confirm(`レベル「${delName}」を削除しますか？そのレベルの単語は先頭レベルへ移動します。`)) return;
+      const fallback = state.levels[0 === i ? 1 : 0];
+      state.words.forEach(w=>{ if(w.levelName===delName) w.levelName = fallback; });
+      if(state.ui.selectedLevel===delName) state.ui.selectedLevel = fallback;
+      state.levels.splice(i,1);
+      render(); renderLevelsList();
+    };
+  });
+}
+addLevelReal.addEventListener("click", ()=>{
+  const name = newLevelName.value.trim();
+  if(!name) return;
+  if(state.levels.includes(name)){ alert("同名レベルが存在します"); return; }
+  state.levels.push(name);
+  newLevelName.value="";
+  render(); renderLevelsList();
+});
+
+/*** 音声 ***/
+function speak(text){
+  try{
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    const en = voices.find(v=>/en-|English/i.test(v.lang||v.name||""));
+    if(en) u.voice = en;
+    u.lang = "en-US";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }catch{ alert("音声再生に対応していない可能性があります。"); }
+}
+
+/*** I/O ***/
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "vocab-board.json";
+  a.click(); URL.revokeObjectURL(a.href);
+});
+document.getElementById("importInput").addEventListener("change", async (e)=>{
+  const file = e.target.files?.[0]; if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!Array.isArray(data.levels) || !Array.isArray(data.words)) throw new Error();
+    state = Object.assign({ui:{selectedLevel:"Lv1", viewMode:"both"}}, data);
+    render();
+    alert("読み込みました");
+  }catch{ alert("JSONの形式が正しくありません"); }
+  e.target.value="";
+});
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  if(confirm("全データを削除しますか？")){
+    state = { levels:["Lv1","Lv2","Lv3","Lv4"], words:[], ui:{selectedLevel:"Lv1", viewMode:"both"} };
+    render();
+  }
+});
+
+/*** イベント ***/
+document.getElementById("addWordBtn").addEventListener("click", openAdd);
+document.getElementById("manageLevelsBtn").addEventListener("click", openLevels);
+$search.addEventListener("input", render);
+$levelSelect.addEventListener("change", ()=>{
+  state.ui.selectedLevel = $levelSelect.value; render();
+});
+$viewMode.addEventListener("change", ()=>{
+  state.ui.viewMode = $viewMode.value; render();
+});
+
+/*** 追加/編集モーダル操作 ***/
+document.getElementById("wordDlgCancel").addEventListener("click", ()=>{ wordDlg.returnValue="cancel"; wordDlg.close(); });
+
+/*** 詳細モーダル操作 ***/
+document.getElementById("detailClose").addEventListener("click", ()=> detailDlg.close());
+
+/*** 初期描画 ***/
+render();
+// Safari対策：音声voicesが遅延ロードすることがある
+if (window.speechSynthesis){ window.speechSynthesis.onvoiceschanged = ()=>{}; }
+</script>
+</body>
+</html>
